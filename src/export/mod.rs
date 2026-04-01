@@ -1,3 +1,4 @@
+pub mod compress;
 mod lm_studio;
 mod continue_dev;
 

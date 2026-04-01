@@ -82,10 +82,6 @@ impl Parser for WindsurfParser {
             })
             .unwrap_or_else(|| "Windsurf session".to_string());
 
-        let filename = path.file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-
         Ok(Conversation::new(
             title,
             Source::Windsurf,

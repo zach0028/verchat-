@@ -7,7 +7,7 @@ use std::io;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind, EnableMouseCapture, DisableMouseCapture};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -25,7 +25,7 @@ use crate::parser::{Parser, claude_code::ClaudeCodeParser, lm_studio::LmStudioPa
 pub fn run(store: crate::store::Store) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
@@ -40,7 +40,7 @@ pub fn run(store: crate::store::Store) -> io::Result<()> {
     let result = run_loop(&mut terminal, &mut app, watch_rx);
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result
@@ -73,12 +73,26 @@ fn run_loop(
         terminal.draw(|f| render(f, app))?;
 
         if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                    app.running = false;
-                    continue;
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                        app.running = false;
+                        continue;
+                    }
+                    handle_key(app, key.code);
                 }
-                handle_key(app, key.code);
+                Event::Mouse(mouse) => {
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            app.select_previous();
+                        }
+                        MouseEventKind::ScrollDown => {
+                            app.select_next();
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -221,6 +235,15 @@ fn render_app_header(f: &mut Frame, _app: &App, area: Rect) {
 }
 
 fn render_launch_overlay(f: &mut Frame, app: &App, area: Rect) {
+    match app.launch_step {
+        0 => render_launch_step_tool(f, app, area),
+        1 => render_launch_step_tokens(f, app, area),
+        _ => {}
+    }
+}
+
+/// Étape 0 : choix de l'outil cible.
+fn render_launch_step_tool(f: &mut Frame, app: &App, area: Rect) {
     let targets = crate::export::available_targets();
 
     let overlay_height = (targets.len() as u16 + 4).min(area.height - 4);
@@ -232,7 +255,6 @@ fn render_launch_overlay(f: &mut Frame, app: &App, area: Rect) {
         height: overlay_height,
     };
 
-    // Fond semi-transparent (clear + block)
     f.render_widget(Clear, overlay_area);
 
     let mut items: Vec<Line> = Vec::new();
@@ -240,15 +262,13 @@ fn render_launch_overlay(f: &mut Frame, app: &App, area: Rect) {
 
     for (i, target) in targets.iter().enumerate() {
         let is_selected = i == app.launch_selected;
-
         let method_label = match target.method {
             crate::export::LaunchMethod::NativeInject => "injecter",
             crate::export::LaunchMethod::Clipboard => "clipboard",
         };
-
         let source_color = Theme::source_color(&target.source);
 
-        let line = Line::from(vec![
+        items.push(Line::from(vec![
             Span::styled(
                 if is_selected { "  ▸ " } else { "    " },
                 Style::default().fg(Theme::blue()),
@@ -262,42 +282,157 @@ fn render_launch_overlay(f: &mut Frame, app: &App, area: Rect) {
                     Style::default().fg(Theme::subtext1())
                 },
             ),
-            Span::styled(
-                format!("  ({method_label})"),
-                Style::default().fg(Theme::overlay0()),
-            ),
-        ]);
-
-        items.push(line);
+            Span::styled(format!("  ({method_label})"), Style::default().fg(Theme::overlay0())),
+        ]));
     }
 
     items.push(Line::from(""));
     items.push(Line::from(vec![
         Span::styled("  ⏎ ", Theme::status_key()),
-        Span::styled("lancer ", Theme::status_label()),
+        Span::styled("suivant ", Theme::status_label()),
         Span::styled(" esc ", Theme::status_key()),
         Span::styled("annuler", Theme::status_label()),
     ]));
 
     let block = Block::default()
-        .title(Span::styled(" Lancer dans... ", Theme::title_focused()))
+        .title(Span::styled(" 1/2 — Lancer dans... ", Theme::title_focused()))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Theme::border_focused())
         .style(Style::default().bg(Theme::base()));
 
-    let paragraph = Paragraph::new(items).block(block);
-    f.render_widget(paragraph, overlay_area);
+    f.render_widget(Paragraph::new(items).block(block), overlay_area);
+}
+
+/// Étape 1 : fenêtre de contexte + analyse.
+fn render_launch_step_tokens(f: &mut Frame, app: &App, area: Rect) {
+    let overlay_height = 18u16.min(area.height - 4);
+    let overlay_width = 52u16.min(area.width - 4);
+    let overlay_area = Rect {
+        x: (area.width - overlay_width) / 2,
+        y: (area.height - overlay_height) / 2,
+        width: overlay_width,
+        height: overlay_height,
+    };
+
+    f.render_widget(Clear, overlay_area);
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(""));
+
+    // Analyse
+    if let Some(analysis) = &app.launch_analysis {
+        lines.push(Line::from(vec![
+            Span::styled("  Dialogue pur : ", Style::default().fg(Theme::subtext0())),
+            Span::styled(
+                format!("~{}K tokens", analysis.dialogue_tokens / 1000),
+                Style::default().fg(Theme::text()).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  ({} msgs user + {} msgs assistant)",
+                    analysis.user_messages, analysis.assistant_messages),
+                Style::default().fg(Theme::overlay0()),
+            ),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("  Fenêtre de contexte max : ", Style::default().fg(Theme::subtext0())),
+        Span::styled(&app.launch_token_input, Style::default().fg(Theme::text()).add_modifier(Modifier::BOLD)),
+        Span::styled("│", Style::default().fg(Theme::blue())),
+    ]));
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("  Presets :  ", Style::default().fg(Theme::overlay0())),
+        Span::styled("1", Style::default().fg(Theme::blue()).add_modifier(Modifier::BOLD)),
+        Span::styled(" 8K  ", Style::default().fg(Theme::subtext0())),
+        Span::styled("2", Style::default().fg(Theme::blue()).add_modifier(Modifier::BOLD)),
+        Span::styled(" 32K  ", Style::default().fg(Theme::subtext0())),
+        Span::styled("3", Style::default().fg(Theme::blue()).add_modifier(Modifier::BOLD)),
+        Span::styled(" 64K  ", Style::default().fg(Theme::subtext0())),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("             ", Style::default()),
+        Span::styled("4", Style::default().fg(Theme::blue()).add_modifier(Modifier::BOLD)),
+        Span::styled(" 128K  ", Style::default().fg(Theme::subtext0())),
+        Span::styled("5", Style::default().fg(Theme::blue()).add_modifier(Modifier::BOLD)),
+        Span::styled(" 256K  ", Style::default().fg(Theme::subtext0())),
+        Span::styled("6", Style::default().fg(Theme::blue()).add_modifier(Modifier::BOLD)),
+        Span::styled(" 1M", Style::default().fg(Theme::subtext0())),
+    ]));
+
+    // Warning si le dialogue dépasse la cible
+    let max_tokens: usize = app.launch_token_input.parse().unwrap_or(128_000);
+    if let Some(analysis) = &app.launch_analysis {
+        lines.push(Line::from(""));
+        if analysis.dialogue_tokens <= max_tokens {
+            lines.push(Line::from(vec![
+                Span::styled("  ✓ ", Style::default().fg(Theme::green())),
+                Span::styled("Le dialogue rentre sans compression", Style::default().fg(Theme::green())),
+            ]));
+        } else {
+            let ratio = (max_tokens as f64 / analysis.dialogue_tokens as f64 * 100.0) as usize;
+            lines.push(Line::from(vec![
+                Span::styled("  ⚠ ", Style::default().fg(Theme::yellow())),
+                Span::styled(
+                    format!("Compression nécessaire (~{ratio}% conservé)"),
+                    Style::default().fg(Theme::yellow()),
+                ),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("    Début + fin conservés, milieu retiré", Style::default().fg(Theme::overlay0())),
+            ]));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("  ⏎ ", Theme::status_key()),
+        Span::styled("lancer ", Theme::status_label()),
+        Span::styled(" esc ", Theme::status_key()),
+        Span::styled("retour", Theme::status_label()),
+    ]));
+
+    let block = Block::default()
+        .title(Span::styled(" 2/2 — Fenêtre de contexte ", Theme::title_focused()))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Theme::border_focused())
+        .style(Style::default().bg(Theme::base()));
+
+    f.render_widget(Paragraph::new(lines).block(block), overlay_area);
 }
 
 fn handle_key(app: &mut App, key: KeyCode) {
     // Launch overlay actif — intercepter les touches
     if app.launch_visible {
-        match key {
-            KeyCode::Esc => app.close_launch_menu(),
-            KeyCode::Up | KeyCode::Char('k') => app.launch_select_prev(),
-            KeyCode::Down | KeyCode::Char('j') => app.launch_select_next(),
-            KeyCode::Enter => app.execute_launch(),
+        match app.launch_step {
+            0 => match key {
+                KeyCode::Esc => app.close_launch_menu(),
+                KeyCode::Up | KeyCode::Char('k') => app.launch_select_prev(),
+                KeyCode::Down | KeyCode::Char('j') => app.launch_select_next(),
+                KeyCode::Enter => app.launch_confirm_step(),
+                _ => {}
+            },
+            1 => match key {
+                KeyCode::Esc => { app.launch_step = 0; }
+                KeyCode::Enter => app.launch_confirm_step(),
+                KeyCode::Char('1') => app.launch_set_preset("8000"),
+                KeyCode::Char('2') => app.launch_set_preset("32000"),
+                KeyCode::Char('3') => app.launch_set_preset("64000"),
+                KeyCode::Char('4') => app.launch_set_preset("128000"),
+                KeyCode::Char('5') => app.launch_set_preset("256000"),
+                KeyCode::Char('6') => app.launch_set_preset("1000000"),
+                KeyCode::Char(c) if c.is_ascii_digit() => {
+                    app.launch_token_input.push(c);
+                }
+                KeyCode::Backspace => { app.launch_token_input.pop(); }
+                _ => {}
+            },
             _ => {}
         }
         return;

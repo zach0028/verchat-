@@ -12,13 +12,13 @@ $ verchat
 
 ## What it does
 
-You use Claude Code, Cursor, LM Studio, Continue.dev, Aider... each stores conversations in its own silo. VER.CHAT brings them all together.
+You use Claude Code, Cursor, LM Studio, Continue.dev, Gemini CLI... each stores conversations in its own silo. VER.CHAT brings them all together.
 
-- **Import** conversations from 6 AI tools
+- **Import** conversations from 7 AI tools
 - **Search** across everything with full-text search
-- **Launch** a conversation into another tool with one keystroke
+- **Launch** a conversation into another tool — with smart compression to fit any context window
 - **Watch** for new conversations in real-time
-- **Track** token usage (input, cache, output) per conversation
+- **Track** token usage (input, cache write, cache read, output) per conversation
 
 ## Install
 
@@ -35,6 +35,8 @@ verchat import --auto # Import all conversations
 verchat search "auth" # Search across all tools
 verchat log          # List recent conversations
 verchat copy <id>    # Copy conversation to clipboard
+verchat source list  # Show configured sources
+verchat source add <tool> <path>  # Add a custom path
 ```
 
 ### TUI Shortcuts
@@ -43,10 +45,21 @@ verchat copy <id>    # Copy conversation to clipboard
 |-----|--------|
 | `/` | Search |
 | `⏎` | Open conversation |
-| `c` | Copy to clipboard |
+| `c` | Copy to clipboard (Markdown) |
 | `l` | Launch in another tool |
 | `s` | Stats |
+| `↑↓` or `j/k` | Navigate |
+| Scroll wheel | Navigate / scroll |
 | `q` | Quit |
+
+### Smart Launch
+
+When launching a conversation into another tool, VER.CHAT:
+
+1. Analyzes the conversation (dialogue tokens vs tool calls / thinking)
+2. Asks for your target context window (presets: 8K, 32K, 64K, 128K, 256K, 1M)
+3. Compresses if needed (keeps beginning + end, removes middle)
+4. Injects natively (LM Studio, Continue.dev) or copies to clipboard
 
 ## Supported tools
 

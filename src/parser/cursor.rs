@@ -1,5 +1,6 @@
-use std::fs;
 use std::path::PathBuf;
+
+use chrono::{DateTime, TimeZone, Utc};
 
 use crate::model::{Conversation, Message, Role, Source};
 use super::{ParseError, Parser};
@@ -123,13 +124,14 @@ impl CursorParser {
                 .unwrap_or_else(|| "Cursor conversation".to_string());
 
             let hash = &key[key.len().saturating_sub(8)..];
+            let (created, updated) = extract_timestamps(blob);
             let conv = Conversation::new(
                 title,
                 Source::Cursor,
                 Some("cursor-ai".to_string()),
                 format!("cursor://{hash}"),
-                chrono::Utc::now(),
-                chrono::Utc::now(),
+                created,
+                updated,
                 messages,
             );
 
@@ -173,6 +175,43 @@ fn extract_strings(data: &[u8]) -> Vec<String> {
     }
 
     strings
+}
+
+/// Extrait les timestamps (created, updated) d'un blob protobuf Cursor.
+/// Cherche des timestamps Unix 4 bytes (secondes) entre 2024 et 2027.
+fn extract_timestamps(data: &[u8]) -> (DateTime<Utc>, DateTime<Utc>) {
+    let min_ts: u32 = 1704067200; // 2024-01-01
+    let max_ts: u32 = Utc::now().timestamp() as u32; // pas dans le futur
+    let mut earliest: Option<u32> = None;
+    let mut latest: Option<u32> = None;
+
+    // Chercher seulement dans les premiers 200 bytes (les metadata protobuf sont au début)
+    let search_len = data.len().min(200);
+    for i in 0..search_len.saturating_sub(4) {
+        let val = u32::from_le_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]);
+        if val > min_ts && val < max_ts {
+            match earliest {
+                None => earliest = Some(val),
+                Some(e) if val < e => earliest = Some(val),
+                _ => {}
+            }
+            match latest {
+                None => latest = Some(val),
+                Some(l) if val > l => latest = Some(val),
+                _ => {}
+            }
+        }
+    }
+
+    let now = Utc::now();
+    let created = earliest
+        .and_then(|ts| Utc.timestamp_opt(ts as i64, 0).single())
+        .unwrap_or(now);
+    let updated = latest
+        .and_then(|ts| Utc.timestamp_opt(ts as i64, 0).single())
+        .unwrap_or(now);
+
+    (created, updated)
 }
 
 fn dirs_home() -> PathBuf {

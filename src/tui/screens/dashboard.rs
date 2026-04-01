@@ -27,12 +27,10 @@ fn render_sidebar(f: &mut Frame, app: &App, area: Rect) {
     .split(area);
 
     // Sources
-    let sources = [
-        (Source::ClaudeCode, "Claude Code"),
-        (Source::LmStudio, "LM Studio"),
-        (Source::ContinueDev, "Continue.dev"),
-        (Source::Aider, "Aider"),
-    ];
+    let sources: Vec<(Source, &str)> = Source::all()
+        .iter()
+        .map(|s| (*s, s.display_name()))
+        .collect();
 
     let mut source_items: Vec<ListItem> = Vec::new();
     source_items.push(ListItem::new(Line::from("")));

@@ -52,6 +52,12 @@ pub struct App {
     pub launch_visible: bool,
     /// Index sélectionné dans le menu de lancement.
     pub launch_selected: usize,
+    /// Étape du launch : 0 = choix outil, 1 = fenêtre contexte, 2 = confirmation
+    pub launch_step: u8,
+    /// Saisie du nombre de tokens max.
+    pub launch_token_input: String,
+    /// Analyse de la conversation pour le launch.
+    pub launch_analysis: Option<crate::export::compress::ConversationAnalysis>,
 
     // ── Notifications ──
     /// Message de notification éphémère (s'efface après quelques secondes).
@@ -74,13 +80,16 @@ impl App {
             scroll_offset: 0,
             launch_visible: false,
             launch_selected: 0,
+            launch_step: 0,
+            launch_token_input: String::new(),
+            launch_analysis: None,
             notification: None,
         }
     }
 
     /// Charge les conversations récentes depuis le store.
     pub fn load_conversations(&mut self) {
-        if let Ok(convs) = self.store.list(100, 0) {
+        if let Ok(convs) = self.store.list(1000, 0) {
             self.conversations = convs;
             if self.selected_index >= self.conversations.len() {
                 self.selected_index = 0;
@@ -230,35 +239,86 @@ impl App {
         }
     }
 
-    /// Ouvre l'overlay de lancement.
+    /// Ouvre l'overlay de lancement (étape 0 : choix outil).
     pub fn open_launch_menu(&mut self) {
         if self.current_conversation.is_some() {
             self.launch_visible = true;
             self.launch_selected = 0;
+            self.launch_step = 0;
+            self.launch_token_input.clear();
+            self.launch_analysis = None;
         }
     }
 
     /// Ferme l'overlay de lancement.
     pub fn close_launch_menu(&mut self) {
         self.launch_visible = false;
+        self.launch_step = 0;
     }
 
-    /// Exécute le lancement vers la cible sélectionnée.
-    pub fn execute_launch(&mut self) {
+    /// Passe à l'étape suivante du launch.
+    pub fn launch_confirm_step(&mut self) {
+        match self.launch_step {
+            0 => {
+                // Étape 0 → 1 : outil choisi, passer à la fenêtre de contexte
+                if let Some(conv) = &self.current_conversation {
+                    self.launch_analysis = Some(crate::export::compress::analyze(conv));
+                }
+                self.launch_step = 1;
+                self.launch_token_input = "128000".to_string();
+            }
+            1 => {
+                // Étape 1 → exécuter le launch avec compression
+                self.execute_launch();
+            }
+            _ => {}
+        }
+    }
+
+    /// Exécute le lancement avec compression si nécessaire.
+    fn execute_launch(&mut self) {
         let targets = crate::export::available_targets();
         let target = match targets.get(self.launch_selected) {
             Some(t) => t.clone(),
             None => return,
         };
 
+        let max_tokens: usize = self.launch_token_input
+            .parse()
+            .unwrap_or(128_000);
+
         let conv = match &self.current_conversation {
             Some(c) => c,
             None => return,
         };
 
-        let result = crate::export::launch(conv, &target);
+        // Comprimer la conversation
+        let compressed = crate::export::compress::compress(conv, max_tokens);
+
+        // Créer une conversation synthétique avec le message compressé
+        let launch_conv = Conversation::new(
+            conv.title.clone(),
+            conv.source,
+            conv.model.clone(),
+            conv.source_path.clone(),
+            conv.created_at,
+            conv.updated_at,
+            vec![crate::model::Message::new(
+                Role::User,
+                compressed,
+                Some(chrono::Utc::now()),
+            )],
+        );
+
+        let result = crate::export::launch(&launch_conv, &target);
         self.launch_visible = false;
+        self.launch_step = 0;
         self.notify(result);
+    }
+
+    /// Applique un preset de tokens.
+    pub fn launch_set_preset(&mut self, tokens: &str) {
+        self.launch_token_input = tokens.to_string();
     }
 
     /// Navigation dans le menu de lancement.
