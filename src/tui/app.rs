@@ -59,6 +59,16 @@ pub struct App {
     /// Analyse de la conversation pour le launch.
     pub launch_analysis: Option<crate::export::compress::ConversationAnalysis>,
 
+    // ── Add path overlay ──
+    /// L'overlay d'ajout de chemin est-il visible ?
+    pub add_path_visible: bool,
+    /// Le chemin saisi par l'utilisateur.
+    pub add_path_input: String,
+    /// L'outil sélectionné pour l'ajout.
+    pub add_path_source: usize,
+    /// Résultat du dernier scan.
+    pub add_path_result: Option<String>,
+
     // ── Notifications ──
     /// Message de notification éphémère (s'efface après quelques secondes).
     pub notification: Option<(String, Instant)>,
@@ -83,6 +93,10 @@ impl App {
             launch_step: 0,
             launch_token_input: String::new(),
             launch_analysis: None,
+            add_path_visible: false,
+            add_path_input: String::new(),
+            add_path_source: 0,
+            add_path_result: None,
             notification: None,
         }
     }
@@ -206,6 +220,103 @@ impl App {
     }
 
     /// Affiche une notification éphémère (disparaît après 2s).
+    /// Ouvre l'overlay d'ajout de chemin.
+    pub fn open_add_path(&mut self) {
+        self.add_path_visible = true;
+        self.add_path_input = "~/".to_string();
+        self.add_path_source = 0;
+        self.add_path_result = None;
+    }
+
+    /// Ferme l'overlay d'ajout de chemin.
+    pub fn close_add_path(&mut self) {
+        self.add_path_visible = false;
+    }
+
+    /// Exécute le scan et ajoute le chemin à la config.
+    pub fn confirm_add_path(&mut self) {
+        let sources = crate::model::Source::all();
+        let source = match sources.get(self.add_path_source) {
+            Some(s) => *s,
+            None => return,
+        };
+
+        // Résoudre le chemin
+        let path = if self.add_path_input.starts_with('~') {
+            if let Some(home) = dirs::home_dir() {
+                self.add_path_input.replacen('~', &home.to_string_lossy(), 1)
+            } else {
+                self.add_path_input.clone()
+            }
+        } else {
+            self.add_path_input.clone()
+        };
+
+        // Mapper source → clé config
+        let source_key = match source {
+            crate::model::Source::ClaudeCode => "claude-code",
+            crate::model::Source::LmStudio => "lm-studio",
+            crate::model::Source::ContinueDev => "continue-dev",
+            crate::model::Source::Aider => "aider",
+            crate::model::Source::GeminiCli => "gemini-cli",
+            crate::model::Source::OpenCode => "opencode",
+            crate::model::Source::Cursor => "cursor",
+            crate::model::Source::Windsurf => "windsurf",
+        };
+
+        // Ajouter à la config
+        let mut config = crate::config::Config::load();
+        config.add_path(source_key, &path);
+        match config.save() {
+            Ok(_) => {
+                // Scanner et importer les conversations trouvées
+                let parsers: Vec<Box<dyn crate::parser::Parser>> = vec![
+                    Box::new(crate::parser::claude_code::ClaudeCodeParser),
+                    Box::new(crate::parser::lm_studio::LmStudioParser),
+                    Box::new(crate::parser::continue_dev::ContinueDevParser),
+                    Box::new(crate::parser::aider::AiderParser),
+                    Box::new(crate::parser::gemini_cli::GeminiCliParser),
+                    Box::new(crate::parser::windsurf::WindsurfParser),
+                ];
+
+                let mut imported = 0;
+                for p in &parsers {
+                    let files = p.scan(&[std::path::PathBuf::from(&path)]);
+                    for file in &files {
+                        if let Ok(conv) = p.parse(file) {
+                            if let Ok(true) = self.store.insert(&conv) {
+                                imported += 1;
+                            }
+                        }
+                    }
+                }
+
+                self.load_conversations();
+                self.add_path_result = Some(format!(
+                    "✓ Chemin ajouté à {}. {} conversation(s) importée(s).",
+                    source.display_name(),
+                    imported,
+                ));
+            }
+            Err(e) => {
+                self.add_path_result = Some(format!("✗ Erreur: {e}"));
+            }
+        }
+    }
+
+    pub fn add_path_source_prev(&mut self) {
+        if self.add_path_source > 0 {
+            self.add_path_source -= 1;
+        }
+    }
+
+    pub fn add_path_source_next(&mut self) {
+        let count = crate::model::Source::all().len();
+        if self.add_path_source + 1 < count {
+            self.add_path_source += 1;
+        }
+    }
+
     pub fn notify(&mut self, message: String) {
         self.notification = Some((message, Instant::now()));
     }

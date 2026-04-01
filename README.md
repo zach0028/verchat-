@@ -47,6 +47,7 @@ verchat source add <tool> <path>  # Add a custom path
 | `⏎` | Open conversation |
 | `c` | Copy to clipboard (Markdown) |
 | `l` | Launch in another tool |
+| `a` | Add a source path |
 | `s` | Stats |
 | `↑↓` or `j/k` | Navigate |
 | Scroll wheel | Navigate / scroll |
@@ -56,8 +57,8 @@ verchat source add <tool> <path>  # Add a custom path
 
 When launching a conversation into another tool, VER.CHAT:
 
-1. Analyzes the conversation (dialogue tokens vs tool calls / thinking)
-2. Asks for your target context window (presets: 8K, 32K, 64K, 128K, 256K, 1M)
+1. Analyzes the conversation (dialogue tokens vs noise)
+2. Asks for your target context window (presets: 8K to 1M)
 3. Compresses if needed (keeps beginning + end, removes middle)
 4. Injects natively (LM Studio, Continue.dev) or copies to clipboard
 
@@ -72,7 +73,6 @@ When launching a conversation into another tool, VER.CHAT:
 | OpenCode | SQLite | ✅ |
 | Cursor | SQLite + Protobuf | ✅ |
 | Aider | Markdown | ✅ |
-| Windsurf | Protobuf | Experimental |
 
 ## How it works
 

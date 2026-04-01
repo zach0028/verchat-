@@ -22,7 +22,7 @@ pub fn render(f: &mut Frame, app: &App, area: Rect) {
 fn render_sidebar(f: &mut Frame, app: &App, area: Rect) {
     let layout = Layout::vertical([
         Constraint::Min(1),    // Sources
-        Constraint::Length(5), // Navigation
+        Constraint::Length(6), // Navigation
     ])
     .split(area);
 
@@ -68,6 +68,10 @@ fn render_sidebar(f: &mut Frame, app: &App, area: Rect) {
     // Navigation links
     let nav_items = vec![
         Line::from(""),
+        Line::from(vec![
+            Span::styled(" a ", Theme::status_key()),
+            Span::styled(" Ajouter", Style::default().fg(Theme::subtext0())),
+        ]),
         Line::from(vec![
             Span::styled(" s ", Theme::status_key()),
             Span::styled(" Stats", Style::default().fg(Theme::subtext0())),
@@ -233,6 +237,8 @@ fn render_status_bar(f: &mut Frame, _app: &App, area: Rect) {
         Span::styled("search ", Theme::status_label()),
         Span::styled(" ⏎ ", Theme::status_key()),
         Span::styled("open ", Theme::status_label()),
+        Span::styled(" a ", Theme::status_key()),
+        Span::styled("add ", Theme::status_label()),
         Span::styled(" s ", Theme::status_key()),
         Span::styled("stats ", Theme::status_label()),
         Span::styled(" q ", Theme::status_key()),

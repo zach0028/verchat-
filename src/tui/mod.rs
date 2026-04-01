@@ -171,6 +171,11 @@ fn render(f: &mut Frame, app: &App) {
         render_launch_overlay(f, app, area);
     }
 
+    // Add path overlay
+    if app.add_path_visible {
+        render_add_path_overlay(f, app, area);
+    }
+
     // Notification overlay
     if let Some((msg, _)) = &app.notification {
         let notif_width = (msg.chars().count() + 4).min(area.width as usize) as u16;
@@ -407,7 +412,130 @@ fn render_launch_step_tokens(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(lines).block(block), overlay_area);
 }
 
+fn render_add_path_overlay(f: &mut Frame, app: &App, area: Rect) {
+    let overlay_height = 16u16.min(area.height - 4);
+    let overlay_width = 55u16.min(area.width - 4);
+    let overlay_area = Rect {
+        x: (area.width - overlay_width) / 2,
+        y: (area.height - overlay_height) / 2,
+        width: overlay_width,
+        height: overlay_height,
+    };
+
+    f.render_widget(Clear, overlay_area);
+
+    let sources = crate::model::Source::all();
+    let selected_source = sources.get(app.add_path_source)
+        .map(|s| s.display_name())
+        .unwrap_or("?");
+    let selected_color = sources.get(app.add_path_source)
+        .map(|s| Theme::source_color(s))
+        .unwrap_or(Theme::text());
+
+    let mut lines: Vec<Line> = Vec::new();
+    lines.push(Line::from(""));
+
+    if let Some(result) = &app.add_path_result {
+        // Afficher le résultat
+        let is_error = result.starts_with('✗');
+        let color = if is_error { Theme::red() } else { Theme::green() };
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {result}"), Style::default().fg(color)),
+        ]));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("  ⏎ ", Theme::status_key()),
+            Span::styled("fermer", Theme::status_label()),
+        ]));
+    } else {
+        // Sélection de l'outil
+        lines.push(Line::from(vec![
+            Span::styled("  Outil : ", Style::default().fg(Theme::subtext0())),
+            Span::styled("● ", Style::default().fg(selected_color)),
+            Span::styled(
+                selected_source,
+                Style::default().fg(selected_color).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled("  (Tab pour changer)", Style::default().fg(Theme::overlay0())),
+        ]));
+        lines.push(Line::from(""));
+
+        // Saisie du chemin
+        lines.push(Line::from(vec![
+            Span::styled("  Chemin : ", Style::default().fg(Theme::subtext0())),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {}", app.add_path_input), Style::default().fg(Theme::text())),
+            Span::styled("│", Style::default().fg(Theme::blue())),
+        ]));
+        lines.push(Line::from(""));
+
+        // Exemples
+        lines.push(Line::from(vec![
+            Span::styled("  Exemples :", Style::default().fg(Theme::overlay0())),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("    ~/Documents/GitHub/", Style::default().fg(Theme::overlay0())),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled("    ~/Projects/mon-app/", Style::default().fg(Theme::overlay0())),
+        ]));
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("  ⏎ ", Theme::status_key()),
+            Span::styled("scanner ", Theme::status_label()),
+            Span::styled(" esc ", Theme::status_key()),
+            Span::styled("annuler", Theme::status_label()),
+        ]));
+    }
+
+    let block = Block::default()
+        .title(Span::styled(" Ajouter un chemin ", Theme::title_focused()))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Theme::border_focused())
+        .style(Style::default().bg(Theme::base()));
+
+    f.render_widget(Paragraph::new(lines).block(block), overlay_area);
+}
+
 fn handle_key(app: &mut App, key: KeyCode) {
+    // Add path overlay actif
+    if app.add_path_visible {
+        match key {
+            KeyCode::Esc => {
+                if app.add_path_result.is_some() {
+                    // Fermer après résultat
+                    app.close_add_path();
+                } else {
+                    app.close_add_path();
+                }
+            }
+            KeyCode::Enter => {
+                if app.add_path_result.is_some() {
+                    app.close_add_path();
+                } else {
+                    app.confirm_add_path();
+                }
+            }
+            KeyCode::Tab => {
+                app.add_path_source_next();
+            }
+            KeyCode::BackTab => {
+                app.add_path_source_prev();
+            }
+            KeyCode::Char(c) if app.add_path_result.is_none() => {
+                app.add_path_input.push(c);
+            }
+            KeyCode::Backspace if app.add_path_result.is_none() => {
+                app.add_path_input.pop();
+            }
+            _ => {}
+        }
+        return;
+    }
+
     // Launch overlay actif — intercepter les touches
     if app.launch_visible {
         match app.launch_step {
@@ -468,6 +596,9 @@ fn handle_key(app: &mut App, key: KeyCode) {
         KeyCode::Char('/') => app.enter_search(),
         KeyCode::Char('s') if app.screen == Screen::Dashboard => {
             app.screen = Screen::Stats;
+        }
+        KeyCode::Char('a') if app.screen == Screen::Dashboard => {
+            app.open_add_path();
         }
         KeyCode::Esc => app.go_back(),
         KeyCode::Up | KeyCode::Char('k') => app.select_previous(),
