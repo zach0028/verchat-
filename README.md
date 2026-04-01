@@ -14,10 +14,11 @@ $ verchat
 
 You use Claude Code, Cursor, LM Studio, Continue.dev, Aider... each stores conversations in its own silo. VER.CHAT brings them all together.
 
-- **Import** conversations from 4 tools (more coming)
+- **Import** conversations from 6 AI tools
 - **Search** across everything with full-text search
 - **Launch** a conversation into another tool with one keystroke
 - **Watch** for new conversations in real-time
+- **Track** token usage (input, cache, output) per conversation
 
 ## Install
 
@@ -54,17 +55,22 @@ verchat copy <id>    # Copy conversation to clipboard
 | Claude Code | JSONL | ✅ |
 | LM Studio | JSON | ✅ |
 | Continue.dev | JSON | ✅ |
+| Gemini CLI | JSON | ✅ |
+| OpenCode | SQLite | ✅ |
+| Cursor | SQLite + Protobuf | ✅ |
 | Aider | Markdown | ✅ |
-| Cursor | SQLite | Planned |
-| Windsurf | Protobuf | Planned |
+| Windsurf | Protobuf | Experimental |
 
 ## How it works
 
 ```
-Claude Code ──┐
-LM Studio   ──┼──► SQLite (local) ──► TUI / CLI
+Claude Code  ──┐
+LM Studio    ──┤
 Continue.dev ──┤
-Aider       ──┘
+Gemini CLI   ──┼──► SQLite (local) ──► TUI / CLI
+OpenCode     ──┤
+Cursor       ──┤
+Aider        ──┘
 ```
 
 All data stays on your machine. No cloud, no account, no network.
