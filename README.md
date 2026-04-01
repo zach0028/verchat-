@@ -20,10 +20,27 @@ You use Claude Code, Cursor, LM Studio, Continue.dev, Gemini CLI... each stores 
 - **Watch** for new conversations in real-time
 - **Track** token usage (input, cache write, cache read, output) per conversation
 
-## Install
+## Install (macOS)
+
+### Homebrew (recommended)
 
 ```bash
-cargo install --path .
+brew tap zach0028/tap
+brew install --HEAD verchat
+```
+
+### From source (requires Rust)
+
+```bash
+cargo install --git https://github.com/zach0028/verchat-.git
+```
+
+### Upgrade
+
+```bash
+brew upgrade --fetch-HEAD verchat
+# or
+cargo install --git https://github.com/zach0028/verchat-.git
 ```
 
 ## Usage
