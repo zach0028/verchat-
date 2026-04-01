@@ -4,6 +4,10 @@ use crate::parser::claude_code::ClaudeCodeParser;
 use crate::parser::lm_studio::LmStudioParser;
 use crate::parser::continue_dev::ContinueDevParser;
 use crate::parser::aider::AiderParser;
+use crate::parser::gemini_cli::GeminiCliParser;
+use crate::parser::opencode::OpenCodeParser;
+use crate::parser::cursor::CursorParser;
+use crate::parser::windsurf::WindsurfParser;
 use crate::store::Store;
 use super::{Commands, SourceAction};
 
@@ -14,14 +18,59 @@ fn open_store() -> Store {
     Store::open(&db_path).expect("Failed to open database")
 }
 
-/// Retourne tous les parsers disponibles.
+/// Retourne tous les parsers file-based.
 fn all_parsers() -> Vec<(&'static str, Box<dyn Parser>)> {
     vec![
         ("claude-code", Box::new(ClaudeCodeParser)),
         ("lm-studio", Box::new(LmStudioParser)),
         ("continue-dev", Box::new(ContinueDevParser)),
         ("aider", Box::new(AiderParser)),
+        ("gemini-cli", Box::new(GeminiCliParser)),
+        ("windsurf", Box::new(WindsurfParser)),
     ]
+}
+
+/// Importe les conversations des parsers DB-based (OpenCode, Cursor).
+/// Ces parsers ont une méthode `parse_all()` car ils lisent une DB unique.
+fn import_db_parsers(store: &Store) -> (usize, usize) {
+    let mut imported = 0;
+    let mut skipped = 0;
+
+    // OpenCode
+    let opencode = OpenCodeParser;
+    if opencode.detect() {
+        let convs = opencode.parse_all();
+        println!("  ● OpenCode — {} sessions found", convs.len());
+        let mut oc_imported = 0;
+        let mut oc_skipped = 0;
+        for conv in &convs {
+            match store.insert(conv) {
+                Ok(true) => { imported += 1; oc_imported += 1; }
+                Ok(false) => { skipped += 1; oc_skipped += 1; }
+                Err(_) => {}
+            }
+        }
+        println!("    imported: {oc_imported} | skipped: {oc_skipped}");
+    }
+
+    // Cursor
+    let cursor = CursorParser;
+    if cursor.detect() {
+        let convs = cursor.parse_all();
+        println!("  ● Cursor — {} conversations found", convs.len());
+        let mut cu_imported = 0;
+        let mut cu_skipped = 0;
+        for conv in &convs {
+            match store.insert(conv) {
+                Ok(true) => { imported += 1; cu_imported += 1; }
+                Ok(false) => { skipped += 1; cu_skipped += 1; }
+                Err(_) => {}
+            }
+        }
+        println!("    imported: {cu_imported} | skipped: {cu_skipped}");
+    }
+
+    (imported, skipped)
 }
 
 /// Dispatch la commande.
@@ -126,6 +175,9 @@ fn cmd_import(source_filter: Option<String>, _auto: bool) {
 
         println!("    imported: {imported} | skipped: {skipped} | errors: {errors}");
     }
+
+    // DB-based parsers (OpenCode, Cursor)
+    import_db_parsers(&store);
 
     let total = store.count().unwrap_or(0);
     println!("\n  Total: {total} conversations in store");

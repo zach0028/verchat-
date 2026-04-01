@@ -19,7 +19,7 @@ use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph};
 use app::{App, Screen};
 use theme::Theme;
 use crate::config::Config;
-use crate::parser::{Parser, claude_code::ClaudeCodeParser, lm_studio::LmStudioParser, continue_dev::ContinueDevParser, aider::AiderParser};
+use crate::parser::{Parser, claude_code::ClaudeCodeParser, lm_studio::LmStudioParser, continue_dev::ContinueDevParser, aider::AiderParser, gemini_cli::GeminiCliParser, windsurf::WindsurfParser};
 
 /// Lance la TUI interactive.
 pub fn run(store: crate::store::Store) -> io::Result<()> {
@@ -93,6 +93,8 @@ fn reimport_all(app: &mut App) {
         ("lm-studio", Box::new(LmStudioParser)),
         ("continue-dev", Box::new(ContinueDevParser)),
         ("aider", Box::new(AiderParser)),
+        ("gemini-cli", Box::new(GeminiCliParser)),
+        ("windsurf", Box::new(WindsurfParser)),
     ];
 
     let mut total_new = 0;

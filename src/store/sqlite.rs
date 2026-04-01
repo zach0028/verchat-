@@ -385,6 +385,10 @@ fn source_to_str(source: &Source) -> &'static str {
         Source::LmStudio => "lm-studio",
         Source::ContinueDev => "continue-dev",
         Source::Aider => "aider",
+        Source::GeminiCli => "gemini-cli",
+        Source::OpenCode => "opencode",
+        Source::Cursor => "cursor",
+        Source::Windsurf => "windsurf",
     }
 }
 
@@ -394,7 +398,11 @@ fn str_to_source(s: &str) -> Source {
         "lm-studio" => Source::LmStudio,
         "continue-dev" => Source::ContinueDev,
         "aider" => Source::Aider,
-        _ => Source::ClaudeCode, // fallback safe
+        "gemini-cli" => Source::GeminiCli,
+        "opencode" => Source::OpenCode,
+        "cursor" => Source::Cursor,
+        "windsurf" => Source::Windsurf,
+        _ => Source::ClaudeCode,
     }
 }
 

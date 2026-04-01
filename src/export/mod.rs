@@ -117,6 +117,24 @@ fn open_app(source: &Source, name: &str) -> Option<String> {
                 .arg("Terminal")
                 .spawn()
         }
+        Source::GeminiCli | Source::OpenCode => {
+            Command::new("open")
+                .arg("-a")
+                .arg("Terminal")
+                .spawn()
+        }
+        Source::Cursor => {
+            Command::new("open")
+                .arg("-a")
+                .arg("Cursor")
+                .spawn()
+        }
+        Source::Windsurf => {
+            Command::new("open")
+                .arg("-a")
+                .arg("Windsurf")
+                .spawn()
+        }
     };
 
     match result {

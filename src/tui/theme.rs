@@ -111,6 +111,10 @@ impl Theme {
             Source::LmStudio => Self::blue(),     // Cyan — LM Studio
             Source::ContinueDev => Self::green(), // Vert — Continue.dev
             Source::Aider => Self::peach(),       // Orange — Aider
+            Source::GeminiCli => Self::teal(),    // Teal — Gemini
+            Source::OpenCode => Self::yellow(),   // Jaune — OpenCode
+            Source::Cursor => Self::pink(),       // Rose — Cursor
+            Source::Windsurf => Self::blue(),     // Cyan (alt) — Windsurf
         }
     }
 

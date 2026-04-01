@@ -12,6 +12,10 @@ pub enum Source {
     LmStudio,
     ContinueDev,
     Aider,
+    GeminiCli,
+    OpenCode,
+    Cursor,
+    Windsurf,
 }
 
 impl Source {
@@ -22,17 +26,10 @@ impl Source {
             Self::LmStudio => "LM Studio",
             Self::ContinueDev => "Continue.dev",
             Self::Aider => "Aider",
-        }
-    }
-
-    /// Chemins par défaut où l'outil stocke ses conversations.
-    /// Utilisé par la détection automatique lors du `verchat init`.
-    pub fn default_paths(&self) -> Vec<&'static str> {
-        match self {
-            Self::ClaudeCode => vec!["~/.claude/projects/"],
-            Self::LmStudio => vec!["~/.lmstudio/conversations/"],
-            Self::ContinueDev => vec!["~/.continue/sessions/"],
-            Self::Aider => vec![], // pas de chemin par défaut, dépend des projets
+            Self::GeminiCli => "Gemini CLI",
+            Self::OpenCode => "OpenCode",
+            Self::Cursor => "Cursor",
+            Self::Windsurf => "Windsurf",
         }
     }
 
@@ -43,6 +40,10 @@ impl Source {
             Self::LmStudio,
             Self::ContinueDev,
             Self::Aider,
+            Self::GeminiCli,
+            Self::OpenCode,
+            Self::Cursor,
+            Self::Windsurf,
         ]
     }
 }

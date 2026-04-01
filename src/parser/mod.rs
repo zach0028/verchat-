@@ -1,7 +1,13 @@
+#![allow(dead_code)]
+
 pub mod aider;
 pub mod claude_code;
 pub mod continue_dev;
+pub mod cursor;
+pub mod gemini_cli;
 pub mod lm_studio;
+pub mod opencode;
+pub mod windsurf;
 
 use std::path::PathBuf;
 
@@ -27,19 +33,9 @@ pub enum ParseError {
 }
 
 /// Trait commun à tous les parsers.
-///
-/// Chaque outil IA (Claude Code, LM Studio, etc.) implémente ce trait.
-/// Le Core appelle ces méthodes sans connaître les détails internes du format.
 pub trait Parser {
-    /// Nom lisible du parser (pour les logs et l'affichage).
     fn name(&self) -> &'static str;
-
-    /// Détecte si l'outil est installé sur cette machine.
     fn detect(&self) -> bool;
-
-    /// Scanne les chemins configurés et retourne les fichiers de conversations trouvés.
     fn scan(&self, paths: &[PathBuf]) -> Vec<PathBuf>;
-
-    /// Parse un fichier de conversation et retourne une `Conversation`.
     fn parse(&self, path: &PathBuf) -> Result<Conversation, ParseError>;
 }

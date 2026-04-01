@@ -164,6 +164,10 @@ fn render_conversation_list(f: &mut Frame, app: &App, area: Rect) {
             Source::LmStudio => "LM",
             Source::ContinueDev => "CD",
             Source::Aider => "Ad",
+            Source::GeminiCli => "Gm",
+            Source::OpenCode => "OC",
+            Source::Cursor => "Cu",
+            Source::Windsurf => "WS",
         };
 
         let line = Line::from(vec![
