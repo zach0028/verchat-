@@ -1,31 +1,26 @@
 pub mod compress;
-mod lm_studio;
 mod continue_dev;
+mod lm_studio;
+mod opencode;
 
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::model::{Conversation, Role, Source};
 
 /// Cible de lancement disponible.
 #[derive(Debug, Clone)]
 pub struct LaunchTarget {
-    /// Nom affiché dans le menu.
     pub name: &'static str,
-    /// Clé de la source.
     pub source: Source,
-    /// Méthode d'injection.
     pub method: LaunchMethod,
 }
 
 #[derive(Debug, Clone)]
 pub enum LaunchMethod {
-    /// Injection native — on écrit un fichier dans le dossier de l'outil puis on ouvre l'app.
     NativeInject,
-    /// Copie dans le clipboard puis on ouvre l'app.
     Clipboard,
 }
 
-/// Retourne la liste des cibles de lancement disponibles.
 pub fn available_targets() -> Vec<LaunchTarget> {
     vec![
         LaunchTarget {
@@ -39,13 +34,23 @@ pub fn available_targets() -> Vec<LaunchTarget> {
             method: LaunchMethod::NativeInject,
         },
         LaunchTarget {
+            name: "OpenCode",
+            source: Source::OpenCode,
+            method: LaunchMethod::NativeInject,
+        },
+        LaunchTarget {
             name: "Claude Code",
             source: Source::ClaudeCode,
             method: LaunchMethod::Clipboard,
         },
         LaunchTarget {
-            name: "Aider",
-            source: Source::Aider,
+            name: "Gemini CLI",
+            source: Source::GeminiCli,
+            method: LaunchMethod::Clipboard,
+        },
+        LaunchTarget {
+            name: "Cursor",
+            source: Source::Cursor,
             method: LaunchMethod::Clipboard,
         },
         LaunchTarget {
@@ -57,9 +62,7 @@ pub fn available_targets() -> Vec<LaunchTarget> {
 }
 
 /// Lance une conversation vers la cible choisie.
-/// Injecte le fichier (si possible), copie dans le clipboard, et ouvre l'application.
 pub fn launch(conv: &Conversation, target: &LaunchTarget) -> String {
-    // Étape 1 : injection ou clipboard
     let inject_msg = match target.method {
         LaunchMethod::NativeInject => match target.source {
             Source::LmStudio => match lm_studio::inject(conv) {
@@ -70,85 +73,62 @@ pub fn launch(conv: &Conversation, target: &LaunchTarget) -> String {
                 Ok(path) => format!("✓ Injecté dans Continue.dev ({})", path.display()),
                 Err(e) => return format!("✗ Erreur Continue.dev: {e}"),
             },
-            _ => copy_to_clipboard_msg(conv),
+            Source::OpenCode => match opencode::inject(conv) {
+                Ok(session_id) => format!("✓ Injecté dans OpenCode ({session_id})"),
+                Err(e) => return format!("✗ Erreur OpenCode: {e}"),
+            },
+            _ => clipboard_copy_sync(conv),
         },
-        LaunchMethod::Clipboard => copy_to_clipboard_msg(conv),
+        LaunchMethod::Clipboard => clipboard_copy_sync(conv),
     };
 
-    // Étape 2 : ouvrir l'application (sauf clipboard uniquement)
     if target.name == "Clipboard uniquement" {
         return inject_msg;
     }
 
-    let open_result = open_app(&target.source, target.name);
+    let name = target.name.to_string();
+    let source = target.source;
+    std::thread::spawn(move || {
+        open_app_blocking(&source);
+    });
 
-    match open_result {
-        Some(ok_msg) => format!("{inject_msg} — {ok_msg}"),
-        None => inject_msg,
-    }
+    format!("{inject_msg} — {name} ouvert")
 }
 
-/// Ouvre l'application associée à une source.
-/// Retourne un message de succès, ou None si on ne peut pas l'ouvrir.
-fn open_app(source: &Source, name: &str) -> Option<String> {
-    let result = match source {
-        Source::LmStudio => {
-            // macOS : ouvrir LM Studio via `open`
-            Command::new("open")
-                .arg("-a")
-                .arg("LM Studio")
-                .spawn()
-        }
-        Source::ContinueDev => {
-            // Ouvrir VS Code (Continue.dev est une extension)
-            Command::new("code")
-                .spawn()
-        }
-        Source::ClaudeCode => {
-            // Claude Code est un CLI — ouvrir un nouveau terminal avec claude
-            // On utilise `open -a Terminal` sur macOS comme fallback
-            Command::new("open")
-                .arg("-a")
-                .arg("Terminal")
-                .spawn()
-        }
-        Source::Aider => {
-            Command::new("open")
-                .arg("-a")
-                .arg("Terminal")
-                .spawn()
-        }
-        Source::GeminiCli | Source::OpenCode => {
-            Command::new("open")
-                .arg("-a")
-                .arg("Terminal")
-                .spawn()
-        }
-        Source::Cursor => {
-            Command::new("open")
-                .arg("-a")
-                .arg("Cursor")
-                .spawn()
-        }
-        Source::Windsurf => {
-            Command::new("open")
-                .arg("-a")
-                .arg("Windsurf")
-                .spawn()
-        }
-    };
-
-    match result {
-        Ok(_) => Some(format!("{name} ouvert")),
-        Err(_) => None,
-    }
-}
-
-fn copy_to_clipboard_msg(conv: &Conversation) -> String {
+fn clipboard_copy_sync(conv: &Conversation) -> String {
     let md = format_as_markdown(conv);
     match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(&md)) {
-        Ok(_) => format!("✓ Copié dans le clipboard ({} messages)", conv.messages.len()),
-        Err(e) => format!("✗ Erreur clipboard: {e}"),
+        Ok(_) => format!("✓ Copié ({} messages)", conv.messages.len()),
+        Err(e) => format!("✗ Clipboard: {e}"),
+    }
+}
+
+pub fn clipboard_copy_async(text: String) -> String {
+    let len_hint = text.len();
+    std::thread::spawn(move || {
+        let _ = arboard::Clipboard::new().and_then(|mut cb| cb.set_text(&text));
+    });
+    format!("✓ Copié (~{} chars)", len_hint)
+}
+
+fn open_app_blocking(source: &Source) {
+    let (cmd, args): (&str, Vec<&str>) = match source {
+        Source::LmStudio => ("open", vec!["-a", "LM Studio"]),
+        Source::ContinueDev => ("code", vec![]),
+        Source::Cursor => ("open", vec!["-a", "Cursor"]),
+        Source::Windsurf => ("open", vec!["-a", "Windsurf"]),
+        Source::OpenCode => return, // CLI tool, pas d'app à ouvrir
+        _ => ("open", vec!["-a", "Terminal"]),
+    };
+
+    if let Ok(mut child) = Command::new(cmd)
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        let _ = child.wait();
     }
 }
 

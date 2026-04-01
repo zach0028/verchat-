@@ -74,7 +74,7 @@ pub fn inject(conv: &Conversation) -> Result<PathBuf, String> {
         })
         .collect();
 
-    let title = format!("[VER.CHAT] {}", conv.title);
+    let title = format!("⚡ {}", conv.title);
 
     let session = json!({
         "sessionId": session_id,

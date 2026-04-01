@@ -7,7 +7,7 @@ use std::io;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind, EnableMouseCapture, DisableMouseCapture};
+use crossterm::event::{self, Event, KeyCode, KeyModifiers, MouseEventKind, EnableMouseCapture, DisableMouseCapture, EnableFocusChange, DisableFocusChange};
 use crossterm::execute;
 use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
@@ -25,7 +25,7 @@ use crate::parser::{Parser, claude_code::ClaudeCodeParser, lm_studio::LmStudioPa
 pub fn run(store: crate::store::Store) -> io::Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, EnableFocusChange)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     terminal.clear()?;
@@ -40,7 +40,7 @@ pub fn run(store: crate::store::Store) -> io::Result<()> {
     let result = run_loop(&mut terminal, &mut app, watch_rx);
 
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen)?;
+    execute!(terminal.backend_mut(), DisableFocusChange, DisableMouseCapture, LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result
@@ -52,9 +52,18 @@ fn run_loop(
     watch_rx: Option<mpsc::Receiver<watcher::WatchEvent>>,
 ) -> io::Result<()> {
     let mut last_reimport = Instant::now();
+    let mut last_terminal_restore = Instant::now();
 
     while app.running {
         app.tick_notification();
+
+        // Restaurer l'état terminal périodiquement (toutes les 2s)
+        // Protège contre la perte de raw mode / mouse capture après un launch externe
+        if last_terminal_restore.elapsed() > Duration::from_secs(2) {
+            let _ = enable_raw_mode();
+            let _ = execute!(io::stdout(), EnableMouseCapture);
+            last_terminal_restore = Instant::now();
+        }
 
         // Check file watcher events (non-blocking)
         if let Some(ref rx) = watch_rx {
@@ -62,7 +71,6 @@ fn run_loop(
             while rx.try_recv().is_ok() {
                 has_changes = true;
             }
-            // Debounce : ré-importer max toutes les 3 secondes
             if has_changes && last_reimport.elapsed() > Duration::from_secs(3) {
                 reimport_all(app);
                 app.load_conversations();
@@ -70,29 +78,62 @@ fn run_loop(
             }
         }
 
-        terminal.draw(|f| render(f, app))?;
+        // Render (avec recovery si le terminal est dans un état bizarre)
+        if let Err(_) = terminal.draw(|f| render(f, app)) {
+            // Tenter de restaurer le terminal
+            let _ = enable_raw_mode();
+            let _ = execute!(io::stdout(), EnableMouseCapture);
+            continue;
+        }
 
-        if event::poll(Duration::from_millis(100))? {
-            match event::read()? {
-                Event::Key(key) => {
-                    if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
-                        app.running = false;
-                        continue;
-                    }
-                    handle_key(app, key.code);
-                }
-                Event::Mouse(mouse) => {
-                    match mouse.kind {
-                        MouseEventKind::ScrollUp => {
-                            app.select_previous();
+        // Events avec timeout court pour rester réactif
+        match event::poll(Duration::from_millis(100)) {
+            Ok(true) => {
+                match event::read() {
+                    Ok(Event::Key(key)) => {
+                        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+                            app.running = false;
+                            continue;
                         }
-                        MouseEventKind::ScrollDown => {
-                            app.select_next();
+                        handle_key(app, key.code);
+                    }
+                    Ok(Event::Mouse(mouse)) => {
+                        match mouse.kind {
+                            MouseEventKind::ScrollUp => app.select_previous(),
+                            MouseEventKind::ScrollDown => app.select_next(),
+                            _ => {}
                         }
-                        _ => {}
+                    }
+                    Ok(Event::FocusGained) => {
+                        // Le terminal a repris le focus (retour depuis une app externe)
+                        // Restauration complète de l'état terminal
+                        let _ = enable_raw_mode();
+                        let _ = execute!(
+                            io::stdout(),
+                            EnterAlternateScreen,
+                            EnableMouseCapture,
+                            EnableFocusChange
+                        );
+                        let _ = terminal.clear();
+                        // Forcer un redraw complet
+                        let _ = terminal.draw(|f| render(f, app));
+                    }
+                    Ok(Event::FocusLost) => {
+                        // Rien à faire, mais on le capte pour ne pas le traiter comme une erreur
+                    }
+                    Ok(_) => {}
+                    Err(_) => {
+                        // Erreur de lecture d'événement — restaurer le terminal
+                        let _ = enable_raw_mode();
+                        let _ = execute!(io::stdout(), EnableMouseCapture);
                     }
                 }
-                _ => {}
+            }
+            Ok(false) => {} // Timeout, rien à faire
+            Err(_) => {
+                // Erreur de poll — restaurer le terminal
+                let _ = enable_raw_mode();
+                let _ = execute!(io::stdout(), EnableMouseCapture);
             }
         }
     }
@@ -311,7 +352,7 @@ fn render_launch_step_tool(f: &mut Frame, app: &App, area: Rect) {
 
 /// Étape 1 : fenêtre de contexte + analyse.
 fn render_launch_step_tokens(f: &mut Frame, app: &App, area: Rect) {
-    let overlay_height = 18u16.min(area.height - 4);
+    let overlay_height = 22u16.min(area.height - 4);
     let overlay_width = 52u16.min(area.width - 4);
     let overlay_area = Rect {
         x: (area.width - overlay_width) / 2,
@@ -393,6 +434,16 @@ fn render_launch_step_tokens(f: &mut Frame, app: &App, area: Rect) {
             ]));
         }
     }
+
+    // Info : la conversation sera la plus récente dans l'outil cible
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![
+        Span::styled("  ℹ ", Style::default().fg(Theme::blue())),
+        Span::styled("La conversation sera en haut de", Style::default().fg(Theme::overlay0())),
+    ]));
+    lines.push(Line::from(vec![
+        Span::styled("    la liste dans l'outil cible (⚡)", Style::default().fg(Theme::overlay0())),
+    ]));
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![

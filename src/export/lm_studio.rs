@@ -93,8 +93,8 @@ pub fn inject(conv: &Conversation) -> Result<PathBuf, String> {
 
     // Format complet avec TOUS les champs que LM Studio attend
     let conversation = json!({
-        "name": format!("[VER.CHAT] {}", conv.title),
-        "pinned": false,
+        "name": format!("⚡ {}", conv.title),
+        "pinned": true,
         "createdAt": now_ms,
         "preset": "@local:focus",
         "tokenCount": 0,

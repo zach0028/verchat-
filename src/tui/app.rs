@@ -321,16 +321,18 @@ impl App {
         self.notification = Some((message, Instant::now()));
     }
 
-    /// Vérifie si la notification a expiré.
+    /// Vérifie si la notification a expiré (4s pour les messages longs, 2s sinon).
     pub fn tick_notification(&mut self) {
-        if let Some((_, created)) = &self.notification {
-            if created.elapsed().as_secs() >= 2 {
+        if let Some((msg, created)) = &self.notification {
+            let duration = if msg.contains('—') || msg.contains('\n') { 4 } else { 2 };
+            if created.elapsed().as_secs() >= duration {
                 self.notification = None;
             }
         }
     }
 
     /// Copie la conversation actuelle dans le clipboard au format Markdown.
+    /// Non-bloquant — le clipboard est écrit dans un thread séparé.
     pub fn copy_conversation_to_clipboard(&mut self) {
         let conv = match &self.current_conversation {
             Some(c) => c,
@@ -338,16 +340,8 @@ impl App {
         };
 
         let markdown = format_conversation_as_markdown(conv);
-
-        match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(&markdown)) {
-            Ok(_) => {
-                let msg_count = conv.messages.len();
-                self.notify(format!("✓ Conversation copiée ({msg_count} messages)"));
-            }
-            Err(e) => {
-                self.notify(format!("✗ Erreur clipboard: {e}"));
-            }
-        }
+        let msg = crate::export::clipboard_copy_async(markdown);
+        self.notify(msg);
     }
 
     /// Ouvre l'overlay de lancement (étape 0 : choix outil).

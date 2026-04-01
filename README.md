@@ -60,19 +60,20 @@ When launching a conversation into another tool, VER.CHAT:
 1. Analyzes the conversation (dialogue tokens vs noise)
 2. Asks for your target context window (presets: 8K to 1M)
 3. Compresses if needed (keeps beginning + end, removes middle)
-4. Injects natively (LM Studio, Continue.dev) or copies to clipboard
+4. Injects natively or copies to clipboard
+5. Opens the target tool — conversation appears at the top of the list
 
 ## Supported tools
 
-| Tool | Format | Status |
+| Tool | Import | Launch |
 |------|--------|--------|
-| Claude Code | JSONL | ✅ |
-| LM Studio | JSON | ✅ |
-| Continue.dev | JSON | ✅ |
-| Gemini CLI | JSON | ✅ |
-| OpenCode | SQLite | ✅ |
-| Cursor | SQLite + Protobuf | ✅ |
-| Aider | Markdown | ✅ |
+| Claude Code | ✅ JSONL | Clipboard |
+| LM Studio | ✅ JSON | ✅ Native inject |
+| Continue.dev | ✅ JSON | ✅ Native inject |
+| OpenCode | ✅ SQLite | ✅ Native inject |
+| Gemini CLI | ✅ JSON | Clipboard |
+| Cursor | ✅ Protobuf | Clipboard |
+| Aider | ✅ Markdown | Clipboard |
 
 ## How it works
 
